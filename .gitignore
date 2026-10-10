@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+._*
+
+# Dependencies
+node_modules/
+
+# Build scratch: scripts/build-client.mjs writes a temporary file here to
+# syntax-check the bundle before it replaces lib/client.js.
+#
+# lib/client.js itself is deliberately NOT ignored. It is generated from
+# client/*.js, but it is also the file the plugin actually deploys, so keeping it
+# committed makes a fresh clone immediately usable.
+lib/.client-*.js
+
+# Logs and local state
+*.log
+npm-debug.log*
+.npm/

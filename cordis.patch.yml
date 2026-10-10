@@ -1,0 +1,40 @@
+# dsh-voice bundle patch: inserts the single plugin row that mounts BOTH halves
+# — the host half (TTS synthesis, the `/voice/*` HTTP routes and the live-delta
+# websocket) and the browser half (`lib/client.js`, the speaker button, the
+# floating transport console and the auto-read engine).
+#
+# Every key below is a Config field (Schemastery schema); an invalid value fails
+# the profile load loudly.
+- insert:
+    - id: voice
+      name: dsh-voice
+      config:
+        # Master switch: when false the row loads but every route answers 503
+        # and the browser half renders nothing.
+        enabled: true
+        # autoRead: speak every assistant reply as it streams.
+        autoRead: true
+        # Read the reply again when its turn settles (false = streaming only).
+        readOnSettle: false
+        # Split the streaming reply into sentences this long (characters) when
+        # no sentence terminator shows up — keeps the first words fast.
+        softChunkChars: 40
+        # Never synthesise a single request longer than this many characters.
+        maxCharsPerRequest: 2000
+        # Speech engine: auto | edge | local | browser.
+        #   auto    — edge-tts when usable, else the OS voice
+        #   edge    — Microsoft Edge neural voices (network, needs edge-tts)
+        #   local   — the operating-system voice (macOS `say`, Windows SAPI,
+        #             Linux espeak-ng/spd-say)
+        #   browser — the Web Speech API inside the page (no host synthesis)
+        engine: auto
+        # Voice id for the selected engine. Empty = engine default
+        # (edge: zh-CN-XiaoxiaoNeural, macOS: Tingting, Windows: the default SAPI voice).
+        voice: ''
+        # Speaking rate. For edge/local this is a percentage delta (-50..50);
+        # for the browser engine it is an absolute rate (0.1..10).
+        rate: 0
+        # Synthesised-audio cache ceiling in bytes.
+        maxCacheBytes: 134217728
+        # Keep this many patch-file backups per settings write.
+        backupCount: 2
