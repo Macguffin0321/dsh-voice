@@ -1,8 +1,8 @@
 # dsh-voice
 
-> **当前状态：已经装进 `~/.dsh/profiles/desktop`，重启 DeepSeek Harness 后生效。**
-> 本目录是源码，profile 里的是它的副本。改完这里的文件要重新复制过去
-> （`cp -R lib cordis.patch.yml package.json ~/.dsh/profiles/desktop/node_modules/dsh-voice/`）；
+> **源码与已安装副本的关系**：本仓库是源码；profile 里的
+> `~/.dsh/profiles/desktop/node_modules/dsh-voice` 是它的**副本**。
+> 改完本仓库的文件要重新复制过去（`cp -R lib cordis.patch.yml package.json ~/.dsh/profiles/desktop/node_modules/dsh-voice/`）；
 > 浏览器半刷新页面即可，宿主半需要重启应用。
 
 KIMI 式的语音播报插件，为 DeepSeek Harness 的 Web/桌面客户端补上「朗读」这一半：
@@ -12,19 +12,30 @@ KIMI 式的语音播报插件，为 DeepSeek Harness 的 Web/桌面客户端补�
 - **悬浮语音控制台**——可拖动、可收起的浮窗，带 ⏪30 秒 / 播放暂停 / 30 秒⏩ / 停止 / 进度条 / 音色切换 / 自动朗读开关。
 - **音色切换**——内置 322 个 Edge 神经音色（中文 14 个，排在最前），也能用 macOS / Windows / Linux 的系统音色。
 
+> 版本：[v0.3.1](https://github.com/Macguffin0321/dsh-voice/releases) ·
+> 许可证 [MIT](LICENSE) · 每次发布都会打 tag，`git checkout v0.3.1` 可以回到任意版本。
+
 ---
 
 ## 安装
 
-插件目录就是本仓库。安装分三步（DSH 桌面端的 profile 由应用独占，不能用 `dsh plugin` 命令写入，
-所以这里直接写 profile 目录）：
+**不需要构建，也不需要 `pnpm install`** —— 浏览器半的产物 `lib/client.js`
+已经在仓库里，克隆下来就是可直接安装的插件。
+
+安装分三步（DSH 桌面端的 profile 由应用独占，不能用 `dsh plugin` 命令写入，
+所以这里是直接把目录写进 profile）：
 
 ```sh
-# 1. 把插件放进 profile 的 node_modules
+# 1. 克隆，并放进 profile 的 node_modules
 PROFILE="$HOME/.dsh/profiles/desktop"
 mkdir -p "$PROFILE/node_modules"
-cp -R /path/to/dsh-voice "$PROFILE/node_modules/dsh-voice"
+
+git clone https://github.com/Macguffin0321/dsh-voice.git /tmp/dsh-voice
+cp -R /tmp/dsh-voice "$PROFILE/node_modules/dsh-voice"
 ```
+
+> 只想升级不重装时，`git -C /tmp/dsh-voice pull` 之后再 `cp -R` 覆盖一次即可。
+> 覆盖后**浏览器半刷新页面**就生效，**宿主半需要重启应用**。
 
 2. 把 `dsh-voice` 追加到 `~/.dsh/profiles/desktop/package.json` 的
    `dsh.profile.bundles` 数组末尾（**这一步必须有**——profile 只加载
