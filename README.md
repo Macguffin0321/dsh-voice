@@ -10,7 +10,8 @@ KIMI 式的语音播报插件，为 DeepSeek Harness 的 Web/桌面客户端补�
 - **实时播报**——AI 回复还在流式生成时就开始朗读，按句切分、边生成边合成边播放，不用等整段回复结束。
 - **每段回复下方的小喇叭**——点击可以重播该条回复（再次点击停止），悬停显示提示。
 - **悬浮语音控制台**——可拖动、可收起的浮窗，带 ⏪30 秒 / 播放暂停 / 30 秒⏩ / 停止 / 进度条 / 音色切换 / 自动朗读开关。
-- **音色切换**——内置 322 个 Edge 神经音色（中文 14 个，排在最前），也能用 macOS / Windows / Linux 的系统音色。
+- **音色切换**——只列出中文音色（普通话 8 个 / 台湾 3 个 / 粤语 3 个），按语言分组、带性别标注。
+  Edge 本身提供 322 个音色，其余语言在列表里没有意义，因此全部过滤掉；系统音色同样只保留中文。
 
 > 版本：[v0.3.1](https://github.com/Macguffin0321/dsh-voice/releases) ·
 > 许可证 [MIT](LICENSE) · 每次发布都会打 tag，`git checkout v0.3.1` 可以回到任意版本。
@@ -180,6 +181,15 @@ profile 的 `node_modules/dsh-voice` 再刷新页面（宿主半的改动仍需�
 
 ## 变更记录
 
+> **0.4.2 的教训（值得单独记）**：给 profile 加 `link:` 依赖时，我没有先验证它会怎样影响
+> ESM 解析，直接改了你手动搭好的可用配置，**导致插件启动失败（`fail to import`）**。
+> 根因是**符号链接会让 Node 用 realpath 解析模块**，于是宿主依赖找不到（详见「安装到
+> profile 时的几个坑」）。
+>
+> 正确的顺序应该是：**先在临时 profile 里验证**再动正式配置 —— 这一点你自己的
+> `cordis.patch.yml` 里早就写了（当时是为了排查另一个插件）。教训是**排查方法写了不等于会照做**。
+
+
 > **0.1.7 的教训（值得记住）**：处理 Markdown 时，**清洗必须在完整文本上做，切句必须在清洗之后**。
 > 反过来（先切再洗）会让任何跨行的结构（代码块、表格）在切分处断裂，
 > 而"补一条正则"是修不好的 —— 结构已经被切碎了。
@@ -196,6 +206,51 @@ profile 的 `node_modules/dsh-voice` 再刷新页面（宿主半的改动仍需�
 > 不能由"已经到了多少字"决定。
 
 
+
+### 0.4.2
+
+- **插件现在会出现在 DSH 的「插件管理器」里并带开关。** 此前看不到，是因为管理器的列表
+  **只读 profile 的 `dependencies`**，而 `dsh-voice` 只写在 `bundles` 里、靠手动 `cp` 安装。
+- 新增「安装到 profile 时的几个坑」一节，记录三条：
+  **必须用真实目录副本**（符号链接会因 ESM 的 realpath 解析而找不到宿主依赖）、
+  **必须写进 `dependencies`**（否则管理器看不到）、以及 `bundles` 与 `dependencies` 的分工。
+- 过程记录：我加的 `link:` 依赖导致插件启动失败（`fail to import`），已改为 `file:` 并验证恢复。
+  教训写在变更记录开头 —— **先在临时 profile 验证，再动正式配置**。
+
+### 0.4.1
+
+清理死代码与冗余，行为无变化：
+
+| 清理项 | 说明 |
+|---|---|
+| `sanitize.js: joinSegments()` | 定义了但从未被调用（早期实现残留） |
+| `sanitize.js: TERMINATORS` | 常量从未被使用 —— `isCut()` 为了判断 `.` 是小数还是句号，写的是内联逻辑 |
+| `bridge.js: blur()` | 从未被调用（`dispose()` 覆盖了它的职责） |
+| `bridge.js: FENCE_TAIL_LIMIT` | 早期围栏实现的残留常量 |
+| 5 个内部函数的 `export` | `textOfAssistantData`、`messageIdOf`、`parseEdgeVoices`、`detectTools`、`SEGMENT`、两个默认音色常量 —— 只在定义文件内使用 |
+| 重复的错误文案 | `EDGE_MISSING` / `LOCAL_MISSING` 提升为常量，`synthesize()`（抛错）与 `engineMessage()`（返回文本）共用同一句 |
+| `index.js` 的重复播报 | `NOTHING_TO_READ` 提取为常量（两条路径会到达同一提示） |
+
+顺带**修掉一个我自己引入的缓存 bug**：音色列表的缓存提前返回跑在失效检查之前，
+导致重新加载音色后列表永远不更新。已加断言覆盖（旧实现下会失败）。
+
+`Config` 导出**保留** —— 查证 `dsh-ego-browser` 同样导出它，是 Cordis 的约定，不是冗余。
+
+222 → 225 项断言。
+
+### 0.4.0
+
+- **音色列表只保留中文**（普通话 / 台湾 / 粤语），从 322 项精简到 14 项。
+  宿主原本只做**排序**（中文靠前），没有过滤，所以下拉框里仍然混着 300 多个外语音色。
+- 列表按语言**分组显示**（`── 普通话 ──` / `── 台湾 ──` / `── 粤语 ──`），
+  每项标注性别（`Xiaoxiao · 女`）。
+- 排序细节：**方言音色排在标准音色之后**（晓晓在前、辽宁/陕西在后）。
+  这里有个坑 —— 宿主的 `locale` 字段对辽宁、陕西音色也返回 `zh-CN`，
+  方言信息**只在 id 里**（`zh-CN-liaoning-XiaobeiNeural`），
+  所以判断必须读 id 而不是 locale。第一次改的时候就是按 locale 判的，排序没生效。
+- 诊断报告现在同时显示两个数字（`可选 14 项 / 引擎共 322 项`），
+  过滤器出问题时可从报告直接看出来。
+- 测试：新增 7 条断言（只保留中文、方言排序、分组标题只出现一次、性别标注等），214 → 222 项。
 
 ### 0.3.1
 
@@ -491,3 +546,49 @@ profile 的 `node_modules/dsh-voice` 再刷新页面（宿主半的改动仍需�
 - 只朗读助手回复的**正文**。工具调用、思维链不朗读；**代码块和表格整块跳过，连占位提示都不念**
   （早期版本会把代码块念成「代码块」，现在完全跳过）。行内代码保留其文字，因为它属于句子的一部分。
 - 路由对跨站来源做了拒绝（只允许同源、`dsh-app://` 与 `file:`），不会变成任意网页可用的合成接口。
+
+## 安装到 profile 时的几个坑
+
+这几条都是踩过之后才明白的，照着做可以省掉几小时。
+
+### 1. 必须用**真实目录副本**，不能用符号链接
+
+```sh
+# ✅ 正确
+cp -R /path/to/dsh-voice "$PROFILE/node_modules/dsh-voice"
+
+# ❌ 错误：插件会启动失败，报 "Cannot find package '@deepseek-ai/schemastery'"
+ln -s /path/to/dsh-voice "$PROFILE/node_modules/dsh-voice"
+```
+
+**原因**：Node 的 ESM 解析默认对模块做 `realpath`。符号链接会被解析回源码目录，
+于是插件变成"位于 `/path/to/dsh-voice`"，它向上查找 `node_modules` 时找的是**项目目录**——
+而 `@deepseek-ai/*` 这些宿主依赖装在 **profile** 里，项目里没有，导入就失败了。
+
+真实副本没有这个问题：文件确实在 `$PROFILE/node_modules/dsh-voice/` 下，
+向上走一层就是 `$PROFILE/node_modules/`，宿主的依赖都在那儿。
+
+> 同理，`pnpm` 对 `link:` 依赖创建的就是符号链接，**不要用 `link:` 安装本插件**。
+
+### 2. 想让插件出现在「插件管理器」里，必须写进 `dependencies`
+
+插件管理器的列表**只读 profile 的 `dependencies`**。如果插件只是手动 `cp` 进
+`node_modules` 并加进 `bundles`，它能正常工作，但**管理器里看不到、也就没有开关**。
+
+```json
+{
+  "dependencies": {
+    "dsh-voice": "file:../../../project/dsh-voice"
+  }
+}
+```
+
+`file:` 指向插件所在目录（相对 profile 根），写进去之后管理器的开关就出现了。
+
+### 3. 一次性把两处都配对
+
+| 文件 | 需要什么 | 漏了会怎样 |
+| --- | --- | --- |
+| `package.json` → `dsh.profile.bundles` | 加上 `"dsh-voice"` | 插件**不会被加载**（profile 只加载列出的包） |
+| `package.json` → `dependencies` | 加上 `"dsh-voice": "file:..."` | 插件能跑，但**管理器里看不到** |
+| `node_modules/dsh-voice/` | 真实目录副本 | 启动报 `ERR_MODULE_NOT_FOUND`

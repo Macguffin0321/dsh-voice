@@ -545,7 +545,14 @@ function VoiceConsole(props) {
         onChange: (event) => { void voice.setVoice(event.target.value) },
       }, [
         h('option', { key: '', value: '' }, voice.defaultVoiceLabel()),
-        ...voice.voices.map((item) => h('option', { key: item.id, value: item.id }, `${item.label} (${item.locale})`)),
+        // A disabled heading opens each language group, so the list reads as
+        // three sections instead of one long run of names.
+        ...voice.voiceOptions().flatMap((entry) => (entry.heading === null
+          ? [h('option', { key: entry.voice.id, value: entry.voice.id }, entry.label)]
+          : [
+            h('option', { key: `h-${entry.heading}`, value: '', disabled: true }, `── ${entry.heading} ──`),
+            h('option', { key: entry.voice.id, value: entry.voice.id }, entry.label),
+          ])),
       ]),
       h('div', {
         key: 'rate-row',

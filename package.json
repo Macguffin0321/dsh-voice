@@ -1,6 +1,6 @@
 {
   "name": "dsh-voice",
-  "version": "0.3.1",
+  "version": "0.4.2",
   "private": true,
   "description": "KIMI-style voice broadcast for the DeepSeek Harness web GUI: reads every assistant reply aloud as it streams, with a per-message speaker button, a floating transport console (−30s / +30s / pause) and voice switching",
   "type": "module",

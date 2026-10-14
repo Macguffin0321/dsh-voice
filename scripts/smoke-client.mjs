@@ -836,6 +836,61 @@ async function main() {
     player.enqueue = originalEnqueue
   }
 
+  // ── the voice picker offers Chinese only, grouped ─────────────────────────
+  // The engines return every language they know (Edge alone ships 322 voices)
+  // and the plugin keeps just the Chinese ones. The ordering is asserted from
+  // the ID, not the locale: the host reports plain `zh-CN` for the Liaoning and
+  // Shaanxi voices too, so only the id carries the dialect.
+  {
+    const live = globalThis.__DSH_VOICE__
+    // Fed straight into the bridge: the bundle resolves `fetch` against a window
+    // this harness does not own, so a stub here would intercept nothing. This
+    // scenario is about the picker's shape, not about the transport.
+    const roster = [
+      { id: 'en-US-AriaNeural', label: 'Aria', locale: 'en-US', gender: 'Female' },
+      { id: 'ja-JP-NanamiNeural', label: 'Nanami', locale: 'ja-JP', gender: 'Female' },
+      { id: 'zh-CN-liaoning-XiaobeiNeural', label: 'Xiaobei', locale: 'zh-CN', gender: 'Female' },
+      { id: 'zh-CN-shaanxi-XiaoniNeural', label: 'Xiaoni', locale: 'zh-CN', gender: 'Female' },
+      { id: 'zh-CN-XiaoxiaoNeural', label: 'Xiaoxiao', locale: 'zh-CN', gender: 'Female' },
+      { id: 'zh-CN-YunxiNeural', label: 'Yunxi', locale: 'zh-CN', gender: 'Male' },
+      { id: 'zh-HK-HiuGaaiNeural', label: 'HiuGaai', locale: 'zh-HK', gender: 'Female' },
+      { id: 'zh-TW-HsiaoChenNeural', label: 'HsiaoChen', locale: 'zh-TW', gender: 'Female' },
+      { id: 'fr-FR-DeniseNeural', label: 'Denise', locale: 'fr-FR', gender: 'Female' },
+    ]
+    live.bridge.voices = roster
+    live.bridge.voicesEngine = 'edge'
+    live.bridge.resolved = 'edge'
+
+    const ids = live.voice.voices.map((item) => item.id)
+    check(ids.length === 6, 'only Chinese voices reach the picker', ids.join(','))
+    check(!ids.some((id) => id.startsWith('en-') || id.startsWith('ja-') || id.startsWith('fr-')), 'no foreign voice survives the filter', ids.join(','))
+    check(live.voice.allVoiceCount === 9, 'the unfiltered count is still reported', String(live.voice.allVoiceCount))
+    check(
+      ids.join(',') === 'zh-CN-XiaoxiaoNeural,zh-CN-YunxiNeural,zh-CN-liaoning-XiaobeiNeural,zh-CN-shaanxi-XiaoniNeural,zh-TW-HsiaoChenNeural,zh-HK-HiuGaaiNeural',
+      'the standard voices come before the dialect ones, and the groups stay together',
+      ids.join(','),
+    )
+
+    const options = live.voice.voiceOptions()
+    check(options.length === 6, 'one option per voice', String(options.length))
+    check(
+      options.filter((entry) => entry.heading !== null).map((entry) => entry.heading).join(',') === '普通话,台湾,粤语',
+      'a heading opens each language group',
+      options.filter((entry) => entry.heading !== null).map((entry) => entry.heading).join(','),
+    )
+    check(options[2].heading === null, 'a heading appears only once per group', String(options[2].heading))
+    check(live.voice.voiceOptions() === options, 'the rows are computed once and reused', 'a new array each call')
+    // Reloading the roster must invalidate that cache. The first version of this
+    // cache returned `voiceCache.options` BEFORE the call that validates it
+    // against the roster, so a reload kept serving the old list for ever.
+    live.bridge.voices = [{ id: 'zh-CN-YunxiNeural', label: 'Yunxi', locale: 'zh-CN', gender: 'Male' }]
+    const reloaded = live.voice.voiceOptions()
+    check(reloaded !== options, 'a new roster invalidates the cached rows', 'the old array was reused')
+    check(reloaded.length === 1, 'the cached rows follow the new roster', String(reloaded.length))
+    live.bridge.voices = roster
+    check(options.find((entry) => entry.voice.id === 'zh-CN-YunxiNeural').label === 'Yunxi · 男', 'the label carries the gender', options.find((entry) => entry.voice.id === 'zh-CN-YunxiNeural').label)
+  }
+
   // ── the speed popup ─────────────────────────────────────────────────────
   // One trigger that expands into a list. Each scenario renders from scratch and
   // performs exactly one interaction, so no scenario can pollute another.

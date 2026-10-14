@@ -26,14 +26,6 @@ const POLL_AFTER_FAILURES = 2
 /** Polling cadence in milliseconds. */
 const POLL_MS = 600
 
-/**
- * How far back to look for a code-fence opener that is still being streamed.
- *
- * A fence marker is at most three backticks (or tildes) plus indentation, so a
- * tail longer than this cannot still be one.
- */
-const FENCE_TAIL_LIMIT = 8
-
 /** One session's reading state. */
 class SessionReader {
   constructor(sessionId) {
@@ -316,13 +308,6 @@ export class VoiceBridge {
     this.stopPolling()
     this.openSocket(sessionId)
     this.observeEvents(sessionId)
-  }
-
-  /** Stop following anything (the voice loop is switched off). */
-  blur() {
-    this.closeSocket()
-    this.stopPolling()
-    this.focusSession = ''
   }
 
   /** Stop every transport and drop every subscription. */
@@ -643,7 +628,7 @@ function wsBase(baseUrl) {
  * @param data - the event payload.
  * @returns the text, or ''.
  */
-export function textOfAssistantData(data) {
+function textOfAssistantData(data) {
   if (data === null || typeof data !== 'object') return ''
   const parts = []
   // Shape 1 (0.2 line): `data.message.content` is the assistant message body,
@@ -688,7 +673,7 @@ function numberOr(value, fallback) {
  * @param data - the event payload.
  * @returns the message id, or '' when the payload carries none.
  */
-export function messageIdOf(data) {
+function messageIdOf(data) {
   if (data === null || typeof data !== 'object') return ''
   if (typeof data.messageId === 'string') return data.messageId
   if (typeof data.id === 'string') return data.id

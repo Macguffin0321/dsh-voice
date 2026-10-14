@@ -8,19 +8,15 @@
  * @module dsh-voice/client/sanitize
  */
 
-/** Sentence terminators that end a spoken segment, including full-width forms. */
-const TERMINATORS = new Set(['。', '！', '？', '；', '…', '!', '?', ';', '.', '\n'])
-
 /** Characters that must never survive into speech as their own word. */
 const MARKUP = /[*_`~#>|]+/gu
 
 /**
  * Strip Markdown and code so a reply reads as prose.
  *
- * Code blocks collapse to a short spoken note (their contents are not
- * meaningful aloud), inline code keeps its text, links keep their label, and
- * table rows become comma-joined cells. Emoji and control characters are
- * removed last.
+ * Code blocks are removed entirely (their contents are not meaningful aloud),
+ * inline code keeps its text, links keep their label, and tables are dropped
+ * whole. Emoji and control characters are removed last.
  *
  * @param text - raw assistant Markdown.
  * @returns speakable plain text.
@@ -110,6 +106,17 @@ function looksLikePipeRow(line) {
  * @param text - the whole buffer.
  * @param index - the candidate terminator's index.
  * @returns true when a cut is allowed here.
+ */
+/**
+ * Whether a character ends a spoken segment at this position.
+ *
+ * The terminator set is written out here rather than kept in a Set because `.`
+ * needs its surroundings: a period inside a number (`3.5`) or before a word
+ * (`example.com`) is not a sentence end, and the other characters are.
+ *
+ * @param text - the buffer.
+ * @param index - the position to judge.
+ * @returns true when a segment may end just after this character.
  */
 function isCut(text, index) {
   const char = text[index]
@@ -210,16 +217,6 @@ function lastSoftBreak(text) {
 }
 
 /**
- * Collapse one turn's segments back into the full spoken text.
- *
- * @param segments - the segment texts in order.
- * @returns the joined text.
- */
-export function joinSegments(segments) {
-  return segments.map((segment) => segment.text ?? segment).join(' ').replace(/\s+/gu, ' ').trim()
-}
-
-/**
  * True when a text carries nothing worth speaking (pure punctuation, a code
  * note, or whitespace).
  *
@@ -230,5 +227,3 @@ export function silentText(text) {
   if (typeof text !== 'string') return true
   return text.replace(/[\s\p{P}\p{S}]/gu, '') === ''
 }
-
-export { TERMINATORS }

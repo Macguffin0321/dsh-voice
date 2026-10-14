@@ -88,7 +88,7 @@ class VoiceLog {
 export const voiceLog = new VoiceLog()
 
 /** One spoken segment's lifecycle. */
-export const SEGMENT = {
+const SEGMENT = {
   /** Text accepted, no audio requested yet. */
   PENDING: 'pending',
   /** Audio requested. */

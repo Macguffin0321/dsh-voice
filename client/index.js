@@ -27,6 +27,98 @@ export const inject = ['slots', 'sessions']
 const POSITION_KEY = 'dsh-voice.console-position'
 
 /**
+ * Announced when a reply leaves nothing to speak.
+ *
+ * Two routes reach it: the sanitized text was silent to begin with, or it
+ * survived sanitizing but produced no segments (a reply that is only a code
+ * block). Both mean the same thing to the user, so they say the same thing.
+ */
+const NOTHING_TO_READ = '这条回复还没有可朗读的文字'
+
+/**
+ * Locale prefixes the picker offers, in the order it shows them.
+ *
+ * The engines return every language they know — Edge alone ships 322 voices, and
+ * all but a handful are unusable here. Only Chinese is kept: Mandarin (`zh-CN`,
+ * which includes the regional `zh-CN-liaoning-` and `zh-CN-shaanxi-` voices),
+ * Taiwanese Mandarin (`zh-TW`) and Cantonese (`zh-HK`).
+ */
+const VOICE_LOCALES = ['zh-CN', 'zh-TW', 'zh-HK']
+
+/** The region subtag of a voice's locale: `zh-CN-liaoning` → `zh-CN`. */
+function baseLocale(locale) {
+  return String(locale ?? '').split('-').slice(0, 2).join('-')
+}
+
+/**
+ * Whether a voice is a regional variant rather than the standard accent.
+ *
+ * Read from the id, never the locale: the host reports `zh-CN` for the Liaoning
+ * and Shaanxi voices too, so the dialect shows up only in
+ * `zh-CN-liaoning-XiaobeiNeural`.
+ */
+function isRegional(id, locale) {
+  const head = String(id ?? '').split('-').slice(0, 2).join('-')
+  return head !== '' && head === baseLocale(locale) && String(id ?? '').split('-').length > 3
+}
+
+/** A short Chinese label for one locale, or '' when it is not offered. */
+function localeLabel(locale) {
+  const value = baseLocale(locale)
+  if (value === 'zh-CN') return '普通话'
+  if (value === 'zh-TW') return '台湾'
+  if (value === 'zh-HK') return '粤语'
+  return ''
+}
+
+/**
+ * Keep only the voices worth offering, grouped by language.
+ *
+ * Sorting here rather than relying on the engine's order because the engine
+ * sorts by full locale string, which interleaves the groups: `zh-CN-liaoning-`
+ * and `zh-CN-shaanxi-` sort before plain `zh-CN-`, so a list by locale alone
+ * reads 粤语 → 台湾 → 粤语 → 普通话. Within a group the plain region comes first
+ * (Xiaoxiao before the regional Xiaobei), then alphabetical.
+ *
+ * @param voices - the engine's full roster.
+ * @returns the Chinese subset, ordered for the picker.
+ */
+function chineseVoices(voices) {
+  const kept = voices.filter((item) => localeLabel(item?.locale) !== '')
+  return kept.sort((left, right) => {
+    const rank = VOICE_LOCALES.indexOf(baseLocale(left.locale)) - VOICE_LOCALES.indexOf(baseLocale(right.locale))
+    if (rank !== 0) return rank
+    // A plain region locale beats a regional variant, so the standard voices
+    // (Xiaoxiao, Yunxi) come before the dialect ones (Liaoning, Shaanxi).
+    const leftPlain = isRegional(left.id, left.locale) ? 1 : 0
+    const rightPlain = isRegional(right.id, right.locale) ? 1 : 0
+    if (leftPlain !== rightPlain) return leftPlain - rightPlain
+    return String(left.label ?? '').localeCompare(String(right.label ?? ''))
+  })
+}
+
+/**
+ * {@link chineseVoices} memoised against the roster it was computed from.
+ *
+ * The console re-renders several times a second while a reply is being read, and
+ * the picker asks for its rows on every one of them. The roster only changes
+ * when voices are reloaded, so the sorted list and its labels are kept until
+ * then. Identity comparison is enough: `loadVoices` assigns a fresh array each
+ * time.
+ */
+const voiceCache = { source: null, rows: [], options: [] }
+
+/** The sorted Chinese subset for one roster, computed once per roster. */
+function cachedChineseVoices(voices) {
+  if (voiceCache.source !== voices) {
+    voiceCache.source = voices
+    voiceCache.rows = chineseVoices(voices)
+    voiceCache.options = []
+  }
+  return voiceCache.rows
+}
+
+/**
  * Browser plugin body.
  *
  * @param ctx - client root context.
@@ -75,7 +167,18 @@ export function apply(ctx) {
       return reader === undefined ? bridge.settings : bridge.settings
     },
     get voices() {
-      return bridge.voices
+      return cachedChineseVoices(bridge.voices)
+    },
+
+    /**
+     * The full roster the engine reported, for the diagnostic report.
+     *
+     * The picker shows the Chinese subset; the report should still show how many
+     * voices the engine actually returned, or a future "why is my voice missing"
+     * question could not be answered from it.
+     */
+    get allVoiceCount() {
+      return bridge.voices.length
     },
     get hostReady() {
       return bridge.hostReady
@@ -166,6 +269,38 @@ export function apply(ctx) {
     },
 
     /**
+     * The voice picker's rows, with a heading where the language changes.
+     *
+     * The heading is a separate entry rather than a field on the voice, because
+     * the picker has to render it as its own disabled row.
+     *
+     * @returns `{ voice, label, heading }[]`; `heading` is null except on the
+     *   first voice of each language.
+     */
+    voiceOptions() {
+      // Resolving the rows first is what validates the cache against the current
+      // roster. Returning `voiceCache.options` before that call would serve the
+      // previous roster's rows for ever, because the invalidation lives inside
+      // `cachedChineseVoices`.
+      const rows = cachedChineseVoices(bridge.voices)
+      if (voiceCache.options.length > 0) return voiceCache.options
+      let previous = ''
+      voiceCache.options = rows.map((item) => {
+        const family = localeLabel(item?.locale)
+        const heading = family === previous ? null : family
+        previous = family
+        const name = String(item?.label ?? item?.id ?? '')
+        const gender = item?.gender === 'Female' ? '女' : item?.gender === 'Male' ? '男' : ''
+        return {
+          voice: item,
+          heading,
+          label: [name, gender].filter((part) => part !== '').join(' · '),
+        }
+      })
+      return voiceCache.options
+    },
+
+    /**
      * A warning when the saved voice does not belong to the resolved engine.
      *
      * Edge ids (`zh-CN-XiaoxiaoNeural`) and OS voice names (`Tingting`) are
@@ -226,13 +361,15 @@ export function apply(ctx) {
       }
       const clean = sanitizeSpeech(text)
       if (silentText(clean)) {
-        voice.announce('这条回复还没有可朗读的文字')
+        voice.announce(NOTHING_TO_READ)
         return
       }
       try {
         const count = await reader.playText(clean, { sessionId, turn: typeof turn === 'number' ? turn : null })
         if (count > 0) voice.announce(`正在朗读（${String(count)} 句）`)
-        else voice.announce('这条回复还没有可朗读的文字')
+        // The text was not silent, yet it produced no segments: sanitizing left
+        // nothing speakable (a reply that is only a code block, say).
+        else voice.announce(NOTHING_TO_READ)
       } catch (error) {
         voice.announce(`朗读失败：${error instanceof Error ? error.message : String(error)}`)
       }
@@ -361,7 +498,7 @@ export function apply(ctx) {
         `朗读结尾：${reader.segments.length === 0 ? '(无)' : `[最后一段] ${reader.segments[reader.segments.length - 1].text.slice(-40)}`}`,
         `原始结尾：${(bridge.reader?.(bridge.focusSession)?.raw ?? '').trim().slice(-40) || '(无)'}`,
         `媒体元素：src=${reader.audio?.src === '' ? '(空)' : 'blob'} paused=${String(reader.audio?.paused)} currentTime=${String(reader.audio?.currentTime ?? '?')} networkState=${String(reader.audio?.networkState ?? '?')} readyState=${String(reader.audio?.readyState ?? '?')}`,
-        `音色列表：${String(bridge.voices.length)} 项（来源引擎 ${bridge.voicesEngine || '?'}）`,
+        `音色列表：可选 ${String(voice.voices.length)} 项 / 引擎共 ${String(bridge.voices.length)} 项（来源引擎 ${bridge.voicesEngine || '?'}）`,
         `实时通道：${bridge.polling ? '轮询' : 'WebSocket'}  跟随会话：${bridge.focusSession || '(无)'}`,
         '',
         '--- 最近合成往返 ---',
