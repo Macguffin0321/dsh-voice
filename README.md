@@ -585,7 +585,25 @@ ln -s /path/to/dsh-voice "$PROFILE/node_modules/dsh-voice"
 
 `file:` 指向插件所在目录（相对 profile 根），写进去之后管理器的开关就出现了。
 
-### 3. 一次性把两处都配对
+### 3. 用 `file:` 之后，改代码不需要再手动复制
+
+pnpm 会把 `file:` 依赖**按本包 `package.json` 的 `files` 字段硬链接**进 profile
+（只装 `lib/`、`cordis.patch.yml`、`README.md`、`LICENSE`，`client/` 和 `scripts/`
+这些开发目录不会进去）。
+
+而 `scripts/build-client.mjs` 是**原地覆盖** `lib/client.js`（`writeFileSync`，不删旧文件），
+inode 不变，**硬链接就跟着一起更新**：
+
+```sh
+# 改完源码只需要这一条，部署副本自动同步
+npm run build
+```
+
+> 确认是否同步：`md5 -q lib/client.js` 与
+> `md5 -q "$PROFILE/node_modules/dsh-voice/lib/client.js"` 应当一致。
+> 若哪天构建脚本改成"先删再写"，链接会断开，届时需要重新 `pnpm install`。
+
+### 4. 一次性把两处都配对
 
 | 文件 | 需要什么 | 漏了会怎样 |
 | --- | --- | --- |
