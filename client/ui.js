@@ -319,6 +319,9 @@ function VoiceConsole(props) {
   const truncated = typeof voice.truncated === 'function' ? voice.truncated() === true : false
   const health = voice.health ?? null
   const healthOk = health === null ? null : health.reachable === true
+  // Re-reading needs something queued, or a settled message on the visible
+  // session — that fallback is the common case on a fresh page.
+  const canReread = typeof voice.canReread === 'function' ? voice.canReread() === true : snapshot.hasReading
   const canSeek = voice.settings.engine !== 'browser'
   /**
    * Attach the window drag to the DOM itself.
@@ -527,16 +530,19 @@ function VoiceConsole(props) {
         title: '停止朗读',
         onClick: stop,
       }, h(StopIcon)),
-      snapshot.hasReading
-        ? h('button', {
-          key: 'reread',
-          type: 'button',
-          className: 'dsh-voice-icon dsh-voice-reread',
-          'aria-label': '用当前音色重读这一段',
-          title: '用当前音色重读这一段',
-          onClick: () => { void voice.reread() },
-        }, '重读')
-        : null,
+      // Always rendered, disabled when there is nothing to re-read. Removing the
+      // button entirely made it look like the feature had gone away, and it is
+      // the one control whose absence is indistinguishable from a bug: every
+      // other button here stays put and greys out instead.
+      h('button', {
+        key: 'reread',
+        type: 'button',
+        className: 'dsh-voice-icon dsh-voice-reread',
+        disabled: !canReread,
+        'aria-label': '用当前音色重读这一段',
+        title: canReread ? '用当前音色重读这一段' : '还没有可重读的内容 —— 先让 AI 回复一条',
+        onClick: () => { void voice.reread() },
+      }, '重读'),
       h('span', { key: 'spacer', className: 'dsh-voice-spacer' }),
       h('button', {
         key: 'sync',

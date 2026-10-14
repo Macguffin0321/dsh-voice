@@ -408,6 +408,28 @@ export function apply(ctx) {
     },
 
     /**
+     * Whether there is anything for the console's re-read button to read.
+     *
+     * The speaker button answers the same question for its own message; the
+     * console has no message id, so it asks about the current turn: text already
+     * streamed, or a settled message on the visible session.
+     *
+     * @returns true when re-reading would produce something.
+     */
+    canReread() {
+      if (reader.segments.length > 0) return true
+      // The same sources, in the same order, that `reread()` walks.
+      const current = reader.current
+      const sessionId = current?.sessionId ?? currentSession
+      if (typeof sessionId === 'string' && sessionId !== '') {
+        if (current?.turn !== null && current?.turn !== undefined && bridge.turnText(sessionId, current.turn) !== '') return true
+        if (typeof current?.messageId === 'string' && bridge.messageText(sessionId, current.messageId) !== '') return true
+        if ((bridge.readers.get(sessionId)?.streamed ?? '') !== '') return true
+      }
+      return !silentText(sanitizeSpeech(reader.replayText))
+    },
+
+    /**
      * Re-read whatever is on screen right now with the current voice.
      *
      * It prefers the settled message's own text (so the reading is complete and

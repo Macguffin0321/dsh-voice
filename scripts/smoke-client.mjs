@@ -1064,6 +1064,17 @@ async function main() {
       walk(tree).some((node) => node.props.className === 'dsh-voice-grip'),
       'the header shows a drag grip',
     )
+    // Every console control is always rendered and greys out instead of
+    // disappearing. Re-read used to be the exception, which made "nothing to
+    // re-read yet" look exactly like "the button was removed".
+    const controlKeys = walk(tree)
+      .filter((node) => typeof node.props.className === 'string' && /dsh-voice-(icon|toggle|primary)/u.test(node.props.className))
+      .map((node) => node.props.key)
+    for (const key of ['back', 'toggle', 'forward', 'stop', 'reread', 'sync']) {
+      check(controlKeys.includes(key), `the ${key} control is always present`, controlKeys.join(','))
+    }
+    const reread = walk(tree).find((node) => node.props.key === 'reread')
+    check(reread !== undefined && typeof reread.props.disabled === 'boolean', 're-read carries a disabled state instead of vanishing', String(reread?.props?.disabled))
 
     /**
      * Build the real DOM chain and bind the header's native drag listener to it,
