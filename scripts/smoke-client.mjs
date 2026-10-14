@@ -125,6 +125,8 @@ function makeReact() {
   const refTargets = new Map()
   let cursor = 0
   let rendering = false
+  /** Which component the current slots belong to (see `__begin`). */
+  let lastKey = ''
   const createElement = (type, props, ...children) => ({
     type,
     props: { ...(props ?? {}), children: children.length === 0 ? undefined : children.length === 1 ? children[0] : children },
@@ -157,7 +159,29 @@ function makeReact() {
     useMemo(fn) { return fn() },
     useCallback(fn) { return fn },
     Fragment: 'Fragment',
-    __begin() { cursor = 0; rendering = true },
+    /**
+     * Start a render of one component.
+     *
+     * Real React gives every component instance its own hook scope. This stub
+     * renders components one at a time from a single slot list, so without a
+     * boundary the slots of two components collide: rendering `SpeakerButton`
+     * after `VoiceConsole` made `busy` (slot 1, a boolean) read `forceVoices`
+     * (slot 1, a growing counter), and the button came out `disabled={2}`.
+     *
+     * Slots are therefore kept per component key and dropped when the key
+     * changes, which preserves a component's own state across its own
+     * re-renders while isolating it from every other component.
+     *
+     * @param key - identifies the component being rendered (default `'default'`).
+     */
+    __begin(key = 'default') {
+      if (key !== lastKey) {
+        states.length = 0
+        lastKey = key
+      }
+      cursor = 0
+      rendering = true
+    },
     /**
      * Finish a render: hand each callback ref its node (the way React does at
      * commit) and then flush the effects the render registered.
@@ -469,7 +493,7 @@ function renderConsoleTree() {
   const registration = globalThis.__SMOKE_CONSOLE_REG__
   const react = globalThis.__SMOKE_REACT__
   const injected = registration.options.inject('session-smoke')
-  react.__begin()
+  react.__begin('console')
   const element = registration.component(injected)
   // Find the header's callback ref and register the node React would hand it,
   // so the native drag listener is exercised with a REAL element.
@@ -559,7 +583,7 @@ async function main() {
   // Render every registered component once with its injected face.
   for (const registration of env.registrations) {
     const injected = registration.options.inject('session-smoke')
-    env.react.__begin()
+    env.react.__begin(`screen:${registration.options.name}`)
     let element
     try {
       element = registration.component({ ...injected, ...(registration.options.name === 'conversation.chat.assistant-actions' ? { messageId: 'msg-1', turn: 1 } : {}) })
@@ -583,7 +607,7 @@ async function main() {
   // The live loop: a turn streams, the reader synthesises and plays it.
   const probe = env.registrations.find((item) => item.options.name === 'conversation.input.left')
   const probeProps = probe.options.inject('session-smoke')
-  env.react.__begin()
+  env.react.__begin('probe')
   probe.component(probeProps)
   env.react.__end()
   await new Promise((resolvePromise) => setTimeout(resolvePromise, 10))
@@ -623,7 +647,7 @@ async function main() {
   await new Promise((resolvePromise) => setTimeout(resolvePromise, 20))
 
   const actionProps = action.options.inject('session-smoke')
-  env.react.__begin()
+  env.react.__begin('speaker')
   const button = action.component({ ...actionProps, messageId: 'msg-1', turn: 3 })
   env.react.__end()
   check(button?.props?.disabled === false, 'speaker button is enabled')

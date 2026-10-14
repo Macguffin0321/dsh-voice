@@ -202,8 +202,48 @@ export class VoiceBridge {
     this.resolved = ''
     this.capabilities = null
     this.hostReady = false
+    /**
+     * The last Edge connectivity answer: `{ reachable, message, at }`.
+     *
+     * `null` until the first check. Kept here rather than in the console so the
+     * status survives a re-render and every surface reads one value.
+     */
+    this.health = null
     /** The session the live transport is following (the visible one). */
     this.focusSession = ''
+  }
+
+  /**
+   * Ask the host whether Edge will actually speak right now.
+   *
+   * The host answers from a cached probe (it re-checks every couple of minutes),
+   * so calling this before every reply is cheap. `force` makes the host probe
+   * again, which is what the console's sync button does.
+   *
+   * @param options - `{ force }`.
+   * @returns the health payload, or null when the host could not be reached.
+   */
+  async checkHealth(options = {}) {
+    const force = options.force === true ? '?force=1' : ''
+    try {
+      const response = await fetch(`${this.baseUrl}/voice/health${force}`, { method: 'GET', cache: 'no-store' })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const payload = await response.json()
+      this.health = {
+        reachable: payload.reachable === true,
+        message: typeof payload.message === 'string' ? payload.message : '',
+        at: numberOr(payload.checkedAt, Date.now()),
+        ms: numberOr(payload.ms, 0),
+      }
+      this.onStatus({ health: this.health })
+      return this.health
+    } catch (error) {
+      // The host itself is unreachable, which is a different failure from Edge
+      // being unreachable — say so rather than blaming Edge.
+      this.health = { reachable: false, message: `无法连接到语音宿主：${error instanceof Error ? error.message : String(error)}`, at: Date.now(), ms: 0 }
+      this.onStatus({ health: this.health })
+      return this.health
+    }
   }
 
   /** Fetch the host snapshot once at startup. */

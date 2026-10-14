@@ -317,6 +317,8 @@ function VoiceConsole(props) {
   const announced = voice.announcedMessage
   const status = statusLabel(snapshot, voice)
   const truncated = typeof voice.truncated === 'function' ? voice.truncated() === true : false
+  const health = voice.health ?? null
+  const healthOk = health === null ? null : health.reachable === true
   const canSeek = voice.settings.engine !== 'browser'
   /**
    * Attach the window drag to the DOM itself.
@@ -434,6 +436,16 @@ function VoiceConsole(props) {
         onClick: () => { setOpen((value) => !value) },
       }, open ? '▾' : '▸'),
     ]),
+    // Edge being down is the failure that looks like nothing happening: the
+    // reply arrives, the console says it is buffering, and no sound ever comes.
+    // The reason is shown rather than left to be inferred.
+    health !== null && health.reachable !== true
+      ? h('div', {
+        key: 'health',
+        className: 'dsh-voice-health',
+        title: '点「同步」重新检查；此提示在 Edge 恢复后自动消失',
+      }, `⚠ Edge 合成服务不可用：${health.message === '' ? '原因未知' : health.message}`)
+      : null,
     // A turn that stopped mid-sentence is announced. Spoken, it sounds exactly
     // like audio the listener missed, so silence is not an acceptable answer.
     truncated
@@ -526,6 +538,15 @@ function VoiceConsole(props) {
         }, '重读')
         : null,
       h('span', { key: 'spacer', className: 'dsh-voice-spacer' }),
+      h('button', {
+        key: 'sync',
+        type: 'button',
+        className: 'dsh-voice-icon dsh-voice-sync',
+        'data-ok': healthOk === null ? 'unknown' : healthOk ? 'true' : 'false',
+        'aria-label': '同步 Edge-TTS 服务',
+        title: '同步 Edge-TTS 服务',
+        onClick: () => { void voice.syncService() },
+      }, '同步'),
       h('button', {
         key: 'auto',
         type: 'button',

@@ -140,6 +140,7 @@ const webServer = {
 const routeCtx = { logger, get: (name) => (name === 'webServer' ? webServer : undefined) }
 const engines = {
   resolvedEngine: () => 'edge',
+  checkEdge: async () => ({ ok: true, at: Date.now(), ms: 12, message: '' }),
   voiceFor: () => 'zh-CN-XiaoxiaoNeural',
   capabilities: () => ({ platform: 'darwin', edge: { command: 'edge-tts' }, local: { command: '/usr/bin/say' } }),
   voices: async () => [{ id: 'zh-CN-XiaoxiaoNeural', label: 'Xiaoxiao', locale: 'zh-CN', gender: 'Female' }],
@@ -154,13 +155,51 @@ const engines = {
   }),
 }
 const dispose = registerRoutes(routeCtx, { store: reloaded, engines, live })
-check(routes.length === 5, 'five HTTP routes registered', String(routes.length))
+check(routes.length === 6, 'six HTTP routes registered', String(routes.length))
 check(upgrades.length === 1, 'one websocket upgrade registered', String(upgrades.length))
 check(routes.some((route) => route.path === '/voice/status'), 'status route present')
 check(routes.some((route) => route.path === '/voice/segment'), 'segment route present')
 check(routes.some((route) => route.path === '/voice/live'), 'live poll route present')
+check(routes.some((route) => route.path === '/voice/health'), 'health route present')
 
 /** Drive one route with a fabricated request. */
+// ── the Edge connectivity gate ─────────────────────────────────────────────
+// `detectTools()` only proves edge-tts is installed, and installation is not the
+// failure that bites: Microsoft rotates the token scheme and every request is
+// refused while the package still looks fine. `auto` must then hand over to the
+// OS voice instead of leaving replies unread.
+{
+  const { VoiceEngines } = await import('../lib/engines.js')
+  const silent = { info() {}, warn() {} }
+  /**
+   * An engines instance whose Edge probe is forced to one answer.
+   *
+   * @param ok - what the probe should report.
+   * @returns the instance.
+   */
+  const withEdgeHealth = (ok) => {
+    const instance = new VoiceEngines({ logger: silent }, { get: () => ({ engine: 'auto', voice: '', rate: 0 }) })
+    instance.checkEdge = async () => ({ ok, at: Date.now(), ms: 5, message: ok ? '' : 'Edge 拒绝了连接（HTTP 403）' })
+    return instance
+  }
+
+  const healthy = withEdgeHealth(true)
+  const good = await healthy.synthesize('探测通过', {})
+  check(good.engine === 'edge', 'a healthy Edge probe keeps using Edge', good.engine)
+  check(good.fellBack !== true, 'a healthy reading reports no fallback', String(good.fellBack))
+
+  const broken = withEdgeHealth(false)
+  const fellBack = await broken.synthesize('探测失败', {})
+  check(fellBack.engine === 'local', 'a failed Edge probe falls back to the OS voice', fellBack.engine)
+  check(fellBack.fellBack === true, 'the fallback is flagged for the console', String(fellBack.fellBack))
+  check(
+    typeof fellBack.notice === 'string' && fellBack.notice.includes('Edge 合成服务不可用'),
+    'the fallback is explained in the notice',
+    String(fellBack.notice).slice(0, 60),
+  )
+  check(fellBack.bytes.length > 0, 'the fallback still produces audio', String(fellBack.bytes?.length ?? 0))
+}
+
 async function call(path, { method = 'GET', body, headers = {} } = {}) {
   const route = routes.find((item) => item.path === path.split('?')[0])
   if (route === undefined) throw new Error(`no route ${path}`)

@@ -147,6 +147,26 @@ const CSS = `
   min-width: 42px;
   font-size: 11.5px;
 }
+/* The sync button doubles as an indicator: it is the only surface that says
+   whether Edge is answering, so it colours itself by that answer. */
+.dsh-voice-sync[data-ok='false'] {
+  color: #dc2626;
+  border-color: color-mix(in srgb, #dc2626 45%, transparent);
+  background: color-mix(in srgb, #dc2626 12%, transparent);
+}
+.dsh-voice-sync[data-ok='true'] {
+  color: #16a34a;
+}
+.dsh-voice-health {
+  margin: 5px 0 2px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: color-mix(in srgb, #dc2626 14%, transparent);
+  color: #b91c1c;
+  font-size: 11.5px;
+  line-height: 1.4;
+  word-break: break-word;
+}
 .dsh-voice-truncated {
   margin: 5px 0 2px;
   padding: 5px 8px;

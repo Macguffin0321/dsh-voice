@@ -153,6 +153,8 @@ export function apply(ctx) {
   let position = readPosition()
   /** The last diagnostic report (see `voice.diagnose`). */
   let diagnosticText = ''
+  /** Whether the previous pre-reading check found Edge unavailable. */
+  let lastHealthWasDown = false
 
   const voice = {
     reader,
@@ -183,6 +185,36 @@ export function apply(ctx) {
     get hostReady() {
       return bridge.hostReady
     },
+
+    /** The last Edge connectivity answer, or null before the first check. */
+    get health() {
+      return bridge.health
+    },
+
+    /**
+     * Check the Edge service and say what happened.
+     *
+     * This is the console's sync button. It forces a real probe, so it is also
+     * the way to clear a stale failure: the host caches a failure for only a
+     * short while, and this bypasses even that.
+     *
+     * @returns the health payload, or null when the host itself is unreachable.
+     */
+    async syncService() {
+      voice.announce('正在检查 Edge 服务…')
+      const health = await bridge.checkHealth({ force: true })
+      if (health === null) {
+        voice.announce('检查失败：无法连接到语音宿主')
+        return null
+      }
+      if (health.reachable) {
+        voice.announce(`Edge 服务正常（${String(health.ms)} ms）`)
+        return health
+      }
+      voice.announce(`Edge 服务不可用：${health.message}`)
+      return health
+    },
+
     get announcedMessage() {
       return notice
     },
@@ -534,6 +566,11 @@ export function apply(ctx) {
         // A new turn supersedes whatever the previous one was reading.
         if (reader.segments.length > 0 && reader.current?.reason !== 'replay') reader.reset()
         truncated = false
+        // Every reply begins by asking whether the Edge service is actually
+        // answering. The host caches the probe, so this costs nothing most of the
+        // time; when it does fail the user is told before a silent reading rather
+        // than after one.
+        void checkBeforeReading()
         return
       }
       if (event.kind === 'segments') {
@@ -630,6 +667,27 @@ export function apply(ctx) {
   /** Update the console's fallback line when the reading goes idle. */
   function announceFrom(message) {
     if (message !== '') notice = message
+  }
+
+  /**
+   * Check the Edge service before a reading, and speak up only when it matters.
+   *
+   * Called at the start of every turn. The host caches the probe, so the common
+   * case is one cheap request; the announcement is made only when the answer
+   * CHANGES, because a line repeated on every reply would be noise rather than
+   * information.
+   */
+  async function checkBeforeReading() {
+    if (bridge.settings.engine !== 'auto') return
+    const health = await bridge.checkHealth()
+    if (health === null) return
+    if (health.reachable) {
+      if (lastHealthWasDown) voice.announce('Edge 服务已恢复')
+      lastHealthWasDown = false
+      return
+    }
+    if (!lastHealthWasDown) voice.announce(`Edge 服务不可用：${health.message}`)
+    lastHealthWasDown = true
   }
 
   ctx.effect(() => () => {
