@@ -610,3 +610,50 @@ npm run build
 | `package.json` → `dsh.profile.bundles` | 加上 `"dsh-voice"` | 插件**不会被加载**（profile 只加载列出的包） |
 | `package.json` → `dependencies` | 加上 `"dsh-voice": "file:..."` | 插件能跑，但**管理器里看不到** |
 | `node_modules/dsh-voice/` | 真实目录副本 | 启动报 `ERR_MODULE_NOT_FOUND`
+
+## 故障排查：突然不朗读了
+
+### 症状：所有合成请求都返回 HTTP 500，诊断报告里出现 403
+
+诊断报告的「最近合成往返」会出现这样的错误：
+
+```
+WSServerHandshakeError: 403, message='Invalid response status'
+url='wss://speech.platform.bing.com/...&Sec-MS-GEC-Version=1-143.0.3650.75'
+```
+
+**这不是插件的问题**，是 `edge-tts` 被微软拒绝了。微软会定期更换
+`Sec-MS-GEC` 安全令牌的算法，旧版 `edge-tts` 算出来的令牌随即失效，
+于是**所有** edge 合成都返回 403（插件把它转成 HTTP 500）。
+
+先单独验证，确认是不是这个原因：
+
+```sh
+python3 -m edge_tts --voice zh-CN-XiaoxiaoNeural --text "测试" --write-media /tmp/t.mp3
+ls -l /tmp/t.mp3        # 0 字节 = edge-tts 自己就失败了
+```
+
+**解决方法：升级 edge-tts**
+
+```sh
+python3 -m pip install --user --break-system-packages --upgrade edge-tts
+```
+
+升级后**不需要重启 DSH** —— 宿主每次合成都是新起一个子进程，会直接用上新版本。
+
+> 这个故障会反复出现（每次微软换算法）。如果升级后仍不行，
+> 说明新版还没适配，改用本地引擎顶上：`~/.dsh/voice-settings.json` 里把
+> `engine` 设为 `local`（用 macOS/Windows/Linux 的系统音色，完全离线）。
+
+### 症状：诊断报告里 `失败：N` 且长时间停在「缓冲中」
+
+先看报告头部的三个数字：
+
+| 字段 | 含义 |
+| --- | --- |
+| `段数` | 本轮一共切出多少句 |
+| `就绪` | 音频已经拿到手的 |
+| `待合成` | 还在排队/合成中的 |
+| `失败` | 合成失败的（会跳过，不阻塞后面） |
+
+`就绪: 0` + `失败: 5` + 大量 `待合成` = 上游合成整体不可用，按上一节处理。
