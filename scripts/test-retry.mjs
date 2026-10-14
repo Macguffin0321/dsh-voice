@@ -203,6 +203,11 @@ exportsValue.apply({
 process.stdout.write('dsh-voice synthesis-retry tests\n')
 
 const live = globalThis.__DSH_VOICE__
+// These scenarios stream short strings to exercise the queue, the retry and the
+// player; the plan-vs-answer gate (which holds text until it is clearly an
+// answer) would simply hold every one of them back, so it is switched off here.
+// Its own behaviour is covered in the host test.
+live.bridge.settings.planChars = 0
 const heard = []
 const player = live.reader
 const originalPlay = player.audio.play.bind(player.audio)

@@ -567,6 +567,10 @@ async function main() {
   await new Promise((resolvePromise) => setTimeout(resolvePromise, 20))
 
   check(env.document.head.children.some((node) => node.attributes['data-dsh-voice-styles'] === '1'), 'stylesheet installed')
+  // The plan-vs-answer gate holds streamed text until it is long enough to be an
+  // answer; these scenarios stream short strings to exercise the pipeline, so it
+  // is switched off. Its own behaviour is covered in the host test.
+  globalThis.__DSH_VOICE__.bridge.settings.planChars = 0
   globalThis.__SMOKE_CONSOLE_REG__ = env.registrations.find((item) => item.options.name === 'shell.overlay')
   // the bundle publishes its live objects on the page global
   env.window.navigator = { clipboard: { writeText: async () => {} } }

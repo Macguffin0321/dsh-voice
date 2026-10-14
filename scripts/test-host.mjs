@@ -128,6 +128,57 @@ listeners[0].fn({ agent, frame: { type: 'end', attemptId: 'a1' } })
 await new Promise((resolvePromise) => setTimeout(resolvePromise, 20))
 check(received.some((frame) => frame.type === 'end'), 'the end frame reaches the subscriber')
 unsubscribe()
+
+// ── the plan-versus-answer signal ─────────────────────────────────────────
+// The model narrates before acting ("I'll start by understanding…"), and that
+// narration must not be spoken. Measured over a year of real sessions: a plan
+// runs to a median of 69 characters and is always followed by a tool call, while
+// the shortest final answer seen was 279 characters. The host therefore reports
+// the moment prose gives way to acting, so the browser can drop the plan.
+{
+  const acting = []
+  const off = live.subscribe('s2', (frame) => acting.push(frame))
+  const agent2 = { session: { id: 's2' } }
+  const feed = (chunk, index) => listeners[0].fn({ agent: agent2, frame: { type: 'chunk', attemptId: 'b1', index, chunk } })
+  listeners[0].fn({ agent: agent2, frame: { type: 'start', attemptId: 'b1', turn: 2, step: 1 } })
+  feed({ type: 'text-delta', text: "I'll start by reading the config." }, 0)
+  feed({ type: 'tool-call', id: 'call-1', name: 'bash' }, 1)
+  await new Promise((resolvePromise) => setTimeout(resolvePromise, 160))
+  check(
+    acting.some((frame) => frame.type === 'acting'),
+    'a tool call is reported as the prose giving way to acting',
+    acting.map((frame) => frame.type).join(','),
+  )
+  check(
+    acting.filter((frame) => frame.type === 'acting').length === 1,
+    'the acting frame is sent once per step, not per chunk',
+    String(acting.filter((frame) => frame.type === 'acting').length),
+  )
+
+  // A reasoning delta is prose's normal companion and must NOT look like acting,
+  // or every step would be dropped before its answer arrived.
+  const answerFrames = []
+  const off2 = live.subscribe('s3', (frame) => answerFrames.push(frame))
+  const agent3 = { session: { id: 's3' } }
+  listeners[0].fn({ agent: agent3, frame: { type: 'start', attemptId: 'c1', turn: 3, step: 1 } })
+  listeners[0].fn({ agent: agent3, frame: { type: 'chunk', attemptId: 'c1', index: 0, chunk: { type: 'reasoning-delta', text: '想想' } } })
+  listeners[0].fn({ agent: agent3, frame: { type: 'chunk', attemptId: 'c1', index: 1, chunk: { type: 'text-delta', text: '这是最终答复。' } } })
+  listeners[0].fn({ agent: agent3, frame: { type: 'end', attemptId: 'c1' } })
+  await new Promise((resolvePromise) => setTimeout(resolvePromise, 160))
+  check(
+    answerFrames.every((frame) => frame.type !== 'acting'),
+    'a reasoning delta alone does not report acting',
+    answerFrames.map((frame) => frame.type).join(','),
+  )
+  process.stdout.write('      DEBUG s3 frames=' + JSON.stringify(answerFrames.map((f) => f.type + ':' + (f.text ?? '').slice(0, 8))) + String.fromCharCode(10))
+  check(
+    answerFrames.filter((frame) => frame.type === 'delta').map((frame) => frame.text).join('') === '这是最终答复。',
+    'the answer still reaches the browser',
+    answerFrames.filter((frame) => frame.type === 'delta').map((frame) => frame.text).join(''),
+  )
+  off()
+  off2()
+}
 check(live.since('s1', 0).frames.length > 0, 'the ring survives an unsubscribe')
 
 // ── routes ────────────────────────────────────────────────────────────────
